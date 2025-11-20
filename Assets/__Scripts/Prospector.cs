@@ -20,6 +20,8 @@ public class Prospector : MonoBehaviour
 
     private Deck deck;
     private JsonLayout jsonLayout;
+    static private CardProspector selectedCard = null;
+
 
     // A Dictionary to pair mine layout IDs and actual Cards
     private Dictionary<int, CardProspector> mineIdToCardDict;                 // a
@@ -248,20 +250,31 @@ public class Prospector : MonoBehaviour
                 break;
             case eCardState.mine:
                 // Clicking a card in the mine will check if it’s a valid play
-                bool validMatch = true;  // Initially assume that it’s valid 
-
-                // If the card is face-down, it’s not valid
-                if (!cp.faceUp) validMatch = false;
-
-                // If it’s not an adjacent rank, it’s not valid
-                if (!cp.AdjacentTo(S.target)) validMatch = false;            // b
-
-                if (validMatch)
-                {        // If it’s a valid card
-                    S.mine.Remove(cp);   // Remove it from the tableau List
-                    S.MoveToTarget(cp);  // Make it the target card
-
+                if(cp.rank == 13){
+                    S.mine.Remove(cp);
+                    S.MoveToDiscard(cp);
                     S.SetMineFaceUps();  // Be sure to add this line!!
+                    break;
+                }
+
+                if(S.target != null && S.target.state == eCardState.mine){
+                    if (cp.rank + S.target.rank == 13){
+                        S.mine.Remove(cp);
+                        S.MoveToDiscard(cp);
+
+                        S.mine.Remove(S.target);
+                        S.MoveToDiscard(S.target);
+
+                        S.target = null;
+                        S.SetMineFaceUps();
+                        break;
+                    }
+                    else{
+                        S.target = cp;
+                    }
+                }
+                else {
+                    S.target = cp;
                 }
                 break;
         }
