@@ -20,7 +20,7 @@ public class Prospector : MonoBehaviour
 
     private Deck deck;
     private JsonLayout jsonLayout;
-    static private CardProspector selectedCard = null;
+    public CardProspector selectedCard;
 
 
     // A Dictionary to pair mine layout IDs and actual Cards
@@ -43,8 +43,8 @@ public class Prospector : MonoBehaviour
         drawPile = ConvertCardsToCardProspectors(deck.cards);
 
         LayoutMine();
-
-        MoveToTarget(Draw());
+        selectedCard = Draw();
+        MoveToTarget(selectedCard);
         UpdateDrawPile();
     }
 
@@ -152,6 +152,8 @@ public class Prospector : MonoBehaviour
         // Place it on top of the pile for depth sorting
         cp.SetSpriteSortingLayer(jsonLayout.discardPile.layer);               // a
         cp.SetSortingOrder(-200 + (discardPile.Count * 3));                  // b
+        Collider2D col = cp.GetComponent<Collider2D>();
+        if (col != null) col.enabled = false;
     }
 
     /// <summary>
@@ -162,9 +164,17 @@ public class Prospector : MonoBehaviour
     {
         // If there is currently a target card, move it to discardPile
         if (target != null) MoveToDiscard(target);
+        // Set the new target
+        target = cp;
+        cp.state = eCardState.target;
 
+        // Make sure it is face-up
+        cp.faceUp = true;
         // Use MoveToDiscard to move the target card to the correct location
-        MoveToDiscard(cp);                                                    // c
+        cp.SetLocalPos(new Vector3(
+        jsonLayout.multiplier.x * jsonLayout.discardPile.x,
+        jsonLayout.multiplier.y * jsonLayout.discardPile.y,
+        0));                                                  // c
 
         // Then set a few additional things to make cp the new target
         target = cp; // cp is the new target
@@ -228,45 +238,106 @@ public class Prospector : MonoBehaviour
         }
     }
 
+    bool IsBlocked(CardProspector cp)
+    {
+        foreach (int coverID in cp.layoutSlot.hiddenBy)
+        {
+            CardProspector coverCP = mineIdToCardDict[coverID];
 
+            if (coverCP != null && coverCP.state == eCardState.mine)
+                return true;
+        }
+        return false;
+    }
 
     /// <summary>
     /// Handler for any time a card in the game is clicked
     /// </summary>
     /// <param name="cp">The CardProspector that was clicked</param>
     static public void CARD_CLICKED(CardProspector cp)
-    {
+    {   Debug.Log($"Clicked Card -> ID: {cp.layoutID}, Rank: {cp.rank}, selectedcard: {(S.selectedCard != null ? S.selectedCard.rank.ToString() : "null")}");
+
         // The reaction is determined by the state of the clicked card
         switch (cp.state)
         {
+            
+            
             case eCardState.target:
                 // Clicking the target card does nothing
                 break;
             case eCardState.drawpile:
                 // Clicking *any* card in the drawPile will draw the next card
                 // Call two methods on the Prospector Singleton S
-                S.MoveToTarget(S.Draw());  // Draw a new target card
+                CardProspector newTarget = S.Draw();
+                S.MoveToDiscard(S.selectedCard);
+                S.selectedCard = newTarget;
+                S.MoveToTarget(newTarget);  // Draw a new target card
                 S.UpdateDrawPile();          // Restack the drawPile
                 break;
             case eCardState.mine:
+                if(S.IsBlocked(cp)){ 
+                 break;
+                }
                 // Clicking a card in the mine will check if it’s a valid play
                 if(cp.rank == 13){
                     S.mine.Remove(cp);
                     S.MoveToDiscard(cp);
+                    S.target = null;
                     S.SetMineFaceUps();  // Be sure to add this line!!
                     break;
                 }
 
                 if(S.target != null && S.target.state == eCardState.mine){
+                    Debug.Log($"Attempting Pair -> Target Rank: {S.target.rank}, Clicked Rank: {cp.rank}");
                     if (cp.rank + S.target.rank == 13){
                         S.mine.Remove(cp);
-                        S.MoveToDiscard(cp);
 
-                        S.mine.Remove(S.target);
+
+                        S.MoveToDiscard(cp);
+                        if (S.target.state == eCardState.mine) S.mine.Remove(S.target);
                         S.MoveToDiscard(S.target);
 
                         S.target = null;
                         S.SetMineFaceUps();
+                        Debug.Log($"worked Target Rank: {(S.target != null ? S.target.rank.ToString() : "null")}, cp Clicked Rank: {cp.rank}");
+
+                        break;
+                    }
+                    Debug.Log($"Attempting Pair -> Target Rank: {S.target.rank}, Clicked Rank: {S.selectedCard.rank}");
+                    if (S.target.rank + S.selectedCard.rank == 13){
+
+                        CardProspector oldSelected = S.selectedCard;
+
+                        // Remove both from mine
+                        S.mine.Remove(S.target);
+                        S.mine.Remove(oldSelected);
+
+                        // Move both to discard
+                        S.MoveToDiscard(S.target);
+                        S.MoveToDiscard(oldSelected);
+
+                        // Make old selected invisible & inactive
+                        oldSelected.SetSpriteSortingLayer("Row6");
+                        oldSelected.SetSortingOrder(-999);
+                        Collider2D col = oldSelected.GetComponent<Collider2D>();
+                        if (col != null) col.enabled = false;
+
+                        // Clear target
+                        S.target = null;
+
+                        // Draw a new selected card
+                        S.selectedCard = S.Draw();
+                        S.MoveToTarget(S.selectedCard);
+                        S.selectedCard.SetSpriteSortingLayer("NewDrawn");
+                        S.selectedCard.SetSortingOrder(999);
+                        Debug.Log($"Drew a {S.selectedCard.rank}");
+
+                        S.UpdateDrawPile();
+                        S.SetMineFaceUps();
+
+                        Debug.Log(
+                         $"Attempting Pair -> Target Rank: NULL, Selected Rank: {S.selectedCard.rank}");
+
                         break;
                     }
                     else{
